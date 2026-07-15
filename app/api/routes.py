@@ -14,8 +14,8 @@ router = APIRouter()
 logger = get_logger(__name__)
 settings = get_settings()
 
-
 @router.get("/health", response_model=HealthResponse)
+@router.head("/health", include_in_schema=False)
 async def health_check():
     return HealthResponse(status="ok", environment=settings.environment)
 
