@@ -1,35 +1,35 @@
 """
-Combines local semantic similarity (free, via sentence-transformers) with
-the LLM's qualitative feedback, and handles the DB-backed cache so identical
+Combines local text similarity (free, TF-IDF via scikit-learn — no PyTorch
+required, so it fits comfortably in low-memory free-tier hosting) with the
+LLM's qualitative feedback, and handles the DB-backed cache so identical
 resume+JD pairs don't re-hit the LLM (protects your free API quota).
 """
 from __future__ import annotations
 
 import hashlib
 
-from sentence_transformers import SentenceTransformer, util
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy.orm import Session
 
 from app.db.models import AnalysisRecord
 from app.services import llm_client, nlp_engine
 
-_embedder: SentenceTransformer | None = None
-
-
-def _get_embedder() -> SentenceTransformer:
-    global _embedder
-    if _embedder is None:
-        _embedder = SentenceTransformer("all-MiniLM-L6-v2")
-    return _embedder
-
 
 def semantic_similarity(resume_text: str, job_description: str) -> float:
-    """Cosine similarity between resume and JD embeddings, scaled 0-100."""
-    model = _get_embedder()
-    embeddings = model.encode([resume_text, job_description], convert_to_tensor=True)
-    score = util.cos_sim(embeddings[0], embeddings[1]).item()
-    return round(max(0.0, min(1.0, score)) * 100, 1)
-
+    """
+    TF-IDF cosine similarity between resume and JD, scaled 0-100.
+    Lightweight alternative to transformer embeddings — no GPU/large model
+    downloads, minimal memory footprint, well suited to free-tier hosting.
+    """
+    vectorizer = TfidfVectorizer(stop_words="english")
+    try:
+        tfidf_matrix = vectorizer.fit_transform([resume_text, job_description])
+    except ValueError:
+        # Happens if both texts are empty/only stopwords after cleaning.
+        return 0.0
+    score = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+    return round(max(0.0, min(1.0, float(score))) * 100, 1)
 
 def request_hash(resume_text: str, job_description: str) -> str:
     payload = (resume_text.strip() + "||" + job_description.strip()).encode("utf-8")
