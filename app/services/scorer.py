@@ -36,13 +36,20 @@ def request_hash(resume_text: str, job_description: str) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def analyze(resume_text: str, job_description: str, db: Session | None = None) -> dict:
+def analyze(
+    resume_text: str,
+    job_description: str,
+    db: Session | None = None,
+    user_id: int | None = None,
+) -> dict:
     """
     Full analysis pipeline:
     1. Local keyword skill extraction (spaCy) — free, instant.
-    2. Local embedding similarity — free, instant.
+    2. Local TF-IDF similarity — free, instant.
     3. LLM qualitative feedback — free tier API call.
     4. Blend + cache result metadata (no raw text stored) in DB.
+       If user_id is provided (i.e. the caller is logged in), the record
+       is linked to that user so it shows up in their /history.
     """
     req_hash = request_hash(resume_text, job_description)
 
@@ -72,13 +79,18 @@ def analyze(resume_text: str, job_description: str, db: Session | None = None) -
     }
 
     if db is not None:
-        _cache_result(db, req_hash, blended_score)
+        _cache_result(db, req_hash, blended_score, user_id)
 
     return result
 
 
-def _cache_result(db: Session, req_hash: str, score: float) -> None:
+def _cache_result(db: Session, req_hash: str, score: float, user_id: int | None) -> None:
     existing = db.query(AnalysisRecord).filter_by(request_hash=req_hash).first()
     if existing is None:
-        db.add(AnalysisRecord(request_hash=req_hash, match_score=score))
+        db.add(AnalysisRecord(request_hash=req_hash, match_score=score, user_id=user_id))
+        db.commit()
+    elif user_id is not None and existing.user_id is None:
+        # A logged-out user ran this exact analysis before; now a logged-in
+        # user is running the same one — attach it to their history too.
+        existing.user_id = user_id
         db.commit()

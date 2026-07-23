@@ -14,8 +14,8 @@ operations/HR, design, and hospitality/retail in addition to software roles.
 
 ## Live demo
 
-- Frontend: _add your Streamlit Cloud link here_
-- Backend API docs: _add your Render/Railway `/docs` link here_
+- Frontend: https://resume-analyser-c7gcwwntw3lad9j3lxtkc3.streamlit.app/
+- Backend API docs: https://ai-resume-analyzer-api.onrender.com/docs
 
 ## Architecture
 
@@ -29,8 +29,8 @@ operations/HR, design, and hospitality/retail in addition to software roles.
                      │                         │                         │
               ┌──────▼──────┐          ┌───────▼────────┐        ┌───────▼───────┐
               │ pdfplumber/  │          │ spaCy (local,   │        │ Groq API      │
-              │ python-docx  │          │ free) + sentence-│        │ (free tier    │
-              │ (parsing)    │          │ transformers     │        │ LLM reasoning)│
+              │ python-docx  │          │ free) + TF-IDF   │        │ (free tier    │
+              │ (parsing)    │          │ (scikit-learn)   │        │ LLM reasoning)│
               └──────────────┘          └─────────────────┘        └───────────────┘
                                                │
                                         ┌───────▼────────┐
@@ -46,10 +46,11 @@ operations/HR, design, and hospitality/retail in addition to software roles.
 |---|---|
 | Backend API | FastAPI (async, auto-documented) |
 | Resume parsing | pdfplumber, python-docx |
-| Local NLP | spaCy, sentence-transformers (`all-MiniLM-L6-v2`) |
+| Local NLP | spaCy, scikit-learn (TF-IDF similarity) |
 | LLM reasoning | Groq API (Llama 3.3 70B, free tier) |
 | Database | PostgreSQL (prod) / SQLite (dev) via SQLAlchemy |
 | Rate limiting | slowapi |
+| Auth | JWT (python-jose) + bcrypt password hashing |
 | Frontend | Streamlit |
 | Containerization | Docker + docker-compose |
 | CI | GitHub Actions (lint + test on every push) |
@@ -64,12 +65,25 @@ operations/HR, design, and hospitality/retail in addition to software roles.
 - **Graceful degradation** — corrupt files, LLM timeouts, and malformed
   LLM responses all return clean HTTP errors instead of crashing the
   worker or leaking stack traces.
-- **Cost control** — a local embedding similarity score plus a
+- **Cost control** — a local TF-IDF similarity score plus a
   keyword-based skill matcher run before/alongside the LLM call, and a
   DB-backed cache means repeated identical requests don't burn free-tier
   LLM quota.
 - **Stateless backend** — no in-memory session state, so it can be
   horizontally scaled behind a load balancer.
+- **Optional authentication** — JWT-based auth (bcrypt-hashed passwords,
+  stateless tokens) lets users optionally create an account to save their
+  analysis history; `/analyze` works fully anonymously too, so auth never
+  gates the core feature. Only match scores and timestamps are saved to
+  history — never resume text or job descriptions.
+
+## Authentication
+
+- `POST /api/v1/auth/register` — create an account (email + password, bcrypt-hashed)
+- `POST /api/v1/auth/login` — OAuth2-compatible login, returns a JWT access token
+- `GET /api/v1/auth/me` — returns the current authenticated user
+- `GET /api/v1/history` — returns the logged-in user's past match scores (requires a valid token)
+- `POST /api/v1/analyze` accepts an optional `Authorization: Bearer <token>` header — if present, the result is linked to that user's history; if absent, the analysis still runs normally for anonymous use
 
 ## Project structure
 
@@ -155,7 +169,7 @@ ruff check app tests
 
 ## What I'd improve with more time
 
-- Add authentication (JWT) and per-user history dashboard.
+
 - Move the LLM call to a background task queue (Celery/RQ) so the
   request thread never blocks on external API latency.
 - Add OCR fallback (e.g. `pytesseract`) for scanned/image-based PDFs.

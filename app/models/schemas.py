@@ -3,7 +3,9 @@ Pydantic schemas for API request/response validation.
 Using strict schemas is itself a security control — it rejects malformed
 or unexpected payloads before they reach business logic.
 """
-from pydantic import BaseModel, Field, field_validator
+import datetime as dt
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class AnalyzeRequest(BaseModel):
@@ -34,3 +36,34 @@ class AnalyzeResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     environment: str
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class UserOut(BaseModel):
+    id: int
+    email: EmailStr
+    created_at: dt.datetime
+
+    model_config = {"from_attributes": True}
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class HistoryItem(BaseModel):
+    id: int
+    match_score: float
+    created_at: dt.datetime
+
+    model_config = {"from_attributes": True}
