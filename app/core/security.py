@@ -9,7 +9,9 @@ Security helpers.
 """
 from __future__ import annotations
 
+import io
 import re
+import zipfile
 
 import magic
 from fastapi import HTTPException, UploadFile, status
@@ -22,18 +24,44 @@ settings = get_settings()
 
 limiter = Limiter(key_func=get_remote_address)
 
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
 # Real allowed MIME types, verified via magic bytes — not filename extension.
 ALLOWED_MIME_TYPES = {
     "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
+    DOCX_MIME,
 }
 
+# A .docx file IS a zip archive under the hood. Different libmagic/magic-db
+# builds (notably Windows' python-magic-bin vs Linux's libmagic1) sometimes
+# report it generically instead of with the specific Office MIME type.
+# Treat these as "maybe docx" and confirm via the zip's internal structure.
+_ZIP_LIKE_MIME_TYPES = {"application/zip", "application/octet-stream"}
 
-async def validate_file(file: UploadFile) -> bytes:
+
+def _looks_like_docx(contents: bytes) -> bool:
+    """
+    Confirms a zip-like file is actually a .docx by checking for the
+    manifest entry every real Word document contains. Cheap and reliable
+    fallback for when magic's MIME guess is ambiguous/generic.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(contents)) as zf:
+            return "word/document.xml" in zf.namelist()
+    except (zipfile.BadZipFile, ValueError):
+        return False
+
+
+async def validate_file(file: UploadFile) -> tuple[bytes, str]:
     """
     Reads the uploaded file, enforces size limit, and verifies the real
-    file type via magic bytes. Raises HTTPException on any violation.
-    Returns the raw file bytes if valid.
+    file type via magic bytes (with a zip-structure fallback for .docx).
+    Raises HTTPException on any violation.
+
+    Returns (raw_bytes, resolved_mime_type) — resolved_mime_type is always
+    one of ALLOWED_MIME_TYPES, even if magic's raw guess was the generic
+    zip-like fallback, so callers never need to re-detect the type
+    themselves (and can't independently disagree with this check).
     """
     contents = await file.read()
 
@@ -47,13 +75,18 @@ async def validate_file(file: UploadFile) -> bytes:
         )
 
     detected_type = magic.from_buffer(contents, mime=True)
-    if detected_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            f"Unsupported file type '{detected_type}'. Only PDF and DOCX are allowed.",
-        )
+    resolved_type = detected_type
 
-    return contents
+    if detected_type not in ALLOWED_MIME_TYPES:
+        if detected_type in _ZIP_LIKE_MIME_TYPES and _looks_like_docx(contents):
+            resolved_type = DOCX_MIME
+        else:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Unsupported file type '{detected_type}'. Only PDF and DOCX are allowed.",
+            )
+
+    return contents, resolved_type
 
 
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")

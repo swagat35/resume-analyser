@@ -106,10 +106,7 @@ async def analyze_resume(
     Works anonymously. If called with a valid Bearer token, the result is
     also linked to that user's account and appears in GET /history.
     """
-    file_bytes = await validate_file(resume)
-
-    import magic
-    mime_type = magic.from_buffer(file_bytes, mime=True)
+    file_bytes, mime_type = await validate_file(resume)
 
     raw_text = parser.extract_text(file_bytes, mime_type)
     resume_text = sanitize_text(raw_text)

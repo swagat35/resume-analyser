@@ -20,6 +20,9 @@ def _make_docx_bytes(text: str) -> bytes:
 def test_health_check():
     response = client.get("/api/v1/health")
     assert response.status_code == 200
+
+    print(response.status_code)
+    print(response.json())
     assert response.json()["status"] == "ok"
 
 

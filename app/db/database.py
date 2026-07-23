@@ -12,6 +12,7 @@ settings = get_settings()
 
 
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+print("DATABASE_URL =", settings.database_url)
 
 engine = create_engine(settings.database_url, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -31,4 +32,5 @@ def get_db():
 def init_db() -> None:
     """Create tables if they don't exist. Call once at startup."""
     from app.db import models  # noqa: F401  (ensures models are registered)
+    
     Base.metadata.create_all(bind=engine)
