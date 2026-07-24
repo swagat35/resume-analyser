@@ -1,10 +1,13 @@
 FROM python:3.11-slim
 
-# System deps: libmagic for file-type detection, build tools for some wheels
+# System deps: libmagic for file-type detection, build tools for some wheels,
+# tesseract-ocr for the scanned-PDF OCR fallback
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagic1 \
     build-essential \
     curl \
+    tesseract-ocr \
+    tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

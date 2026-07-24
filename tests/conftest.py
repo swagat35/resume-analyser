@@ -16,6 +16,8 @@ import tempfile
 
 _TEST_DB_FD, _TEST_DB_PATH = tempfile.mkstemp(suffix=".db")
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_PATH}"
+
+
 os.environ.setdefault("GROQ_API_KEY", "test-key-not-real")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-not-real")
 

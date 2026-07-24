@@ -46,6 +46,7 @@ operations/HR, design, and hospitality/retail in addition to software roles.
 |---|---|
 | Backend API | FastAPI (async, auto-documented) |
 | Resume parsing | pdfplumber, python-docx |
+| OCR fallback | Tesseract (via pytesseract) + PyMuPDF for scanned PDFs |
 | Local NLP | spaCy, scikit-learn (TF-IDF similarity) |
 | LLM reasoning | Groq API (Llama 3.3 70B, free tier) |
 | Database | PostgreSQL (prod) / SQLite (dev) via SQLAlchemy |
@@ -76,6 +77,15 @@ operations/HR, design, and hospitality/retail in addition to software roles.
   analysis history; `/analyze` works fully anonymously too, so auth never
   gates the core feature. Only match scores and timestamps are saved to
   history — never resume text or job descriptions.
+- **OCR fallback with graceful degradation** — scanned/image-based PDFs
+  are handled via Tesseract OCR, but if the Tesseract binary isn't
+  installed (e.g. a fresh dev machine, or a hosting environment that
+  doesn't have it), the app doesn't crash — it falls back to a clear
+  "couldn't extract text" error instead. OCR accuracy is inherently
+  imperfect (misreads on stylized fonts, tables, etc.), so this is a
+  best-effort fallback, not a guarantee — and it costs meaningfully more
+  CPU/memory per request than the normal text-layer path, since it
+  rasterizes each page to an image before running recognition on it.
 
 ## Authentication
 
@@ -117,7 +127,29 @@ pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
-### 2. Configure environment
+### 2. Install Tesseract OCR (optional but recommended)
+
+Scanned/image-based PDF resumes are handled via OCR, which needs the
+**Tesseract** system binary (separate from the `pytesseract` Python
+package already in `requirements.txt`). The app works fine without it —
+scanned PDFs will just get a clear "couldn't extract text" error instead
+of being OCR'd.
+
+- **Windows**: download and run the installer from the
+  [UB-Mannheim Tesseract build](https://github.com/UB-Mannheim/tesseract/wiki),
+  keeping the default install path. If `pytesseract` can't find it automatically,
+  set the path explicitly near the top of `app/services/parser.py`:
+  ```python
+  import pytesseract
+  pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+  ```
+- **Mac**: `brew install tesseract`
+- **Linux**: `sudo apt-get install tesseract-ocr`
+
+The Docker image and CI pipeline already install this for you — this step
+is only needed if you're running `uvicorn` directly on your own machine.
+
+### 3. Configure environment
 
 ```bash
 cp .env.example .env
@@ -125,7 +157,7 @@ cp .env.example .env
 
 Get a **free** Groq API key at https://console.groq.com/keys and add it to `.env`.
 
-### 3. Run the backend
+### 4. Run the backend
 
 ```bash
 uvicorn app.main:app --reload
@@ -133,7 +165,7 @@ uvicorn app.main:app --reload
 
 API docs available at `http://localhost:8000/docs`.
 
-### 4. Run the frontend (separate terminal)
+### 5. Run the frontend (separate terminal)
 
 ```bash
 streamlit run frontend/streamlit_app.py
@@ -141,13 +173,13 @@ streamlit run frontend/streamlit_app.py
 
 Visit `http://localhost:8501`.
 
-### 5. Run with Docker instead
+### 6. Run with Docker instead
 
 ```bash
 docker-compose up --build
 ```
 
-### 6. Run tests
+### 7. Run tests
 
 ```bash
 pytest tests/ -v
@@ -169,10 +201,8 @@ ruff check app tests
 
 ## What I'd improve with more time
 
-
 - Move the LLM call to a background task queue (Celery/RQ) so the
   request thread never blocks on external API latency.
-- Add OCR fallback (e.g. `pytesseract`) for scanned/image-based PDFs.
 - Add a proper Redis-backed cache layer in front of the DB cache.
 - Expand the skill vocabulary using a maintained taxonomy (e.g. ESCO or
   O*NET) instead of hardcoded per-field lists — the current lists are a

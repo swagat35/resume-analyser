@@ -19,7 +19,7 @@ jobs:
           cache: "pip"
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libmagic1
+        run: sudo apt-get update && sudo apt-get install -y libmagic1 tesseract-ocr tesseract-ocr-eng
 
       - name: Install Python dependencies
         run: |
@@ -32,5 +32,6 @@ jobs:
       - name: Run tests
         env:
           GROQ_API_KEY: "test-key-not-real"
+          JWT_SECRET_KEY: "test-secret-not-real"
           DATABASE_URL: "sqlite:///./test.db"
         run: pytest tests/ -v
